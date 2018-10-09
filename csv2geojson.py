@@ -1,13 +1,16 @@
 #!/usr/bin/env python2
+# -*- coding: ISO-8859-1 -*-
 """
-Usage:  csv2geojson.py -h
- csv2geojson.py [-i INPUT] [-o OUTPUT]
- csv2geojson.py --version
- csv2geojson.py --help | -h
+Usage:  csvparser.py -h
+ csvparser.py [-i INPUT] [-o OUTPUT] [-n NETWORK] [-t TECHNOLOGY]
+ csvparser.py --version
+ csvparser.py --help | -h
 
 Options:
- -i INPUT, --input INPUT       The CVS file to be converted   
- -o OUTPUT, --output OUTPUT      The GeoJSON file to write    [default: out.json]
+ -i INPUT, --input INPUT       The CSV file to be parsed
+ -o OUTPUT, --output OUTPUT      The CSV file to write    [default: out.csv]
+ -n NETWORK, --network NETWORK      The Mobile Network Operator to extract information. Column "Exploitant".    [default: ORANGE]
+ -t TECHNOLOGY, --technology TECHNOLOGY      The Radio technology to extract for. Column "Systeme".    [default: LTE]
  -h --help   Prints this help
  --version   Programme version
 """
@@ -15,7 +18,7 @@ Options:
 from docopt import docopt, printable_usage
 from tqdm import tqdm
 import csv
-from geojson import Point, Feature, FeatureCollection, dumps
+from json import dumps
 from multiprocessing import Process, cpu_count
 import os, shutil, subprocess, time
 
@@ -42,45 +45,38 @@ def nb_processes(nb_file_lines):
     return 1
   return MAX_NB_PROCESS
 
-def unitary_conversion(infile, start, stop, subOutFile, pb_pos=0):
+def unitary_extraction(infile, start, stop, subOutFile, pb_pos, **features):
   """
-  Actually converts the csv entries to a geojson format
+  Actually extracts the csv entries to a geojson format
   
-  :param infile: the inout file (the CSV)
+  :param infile: the input file (the CSV)
   :param start: line number to start conversion
   :param stop: line number where to stop conversion
-  :param subOutFile: output file (part of the resulting geojson)
+  :param subOutFile: output file (part of the resulting csv)
   :param pb_pos: Progress bar position for tqdm
+  :param features: the columns to reduce the csv to
   :param infile: String
   :param start: Integer
   :param stop: Integer
   :param subOutFile: String
   :param pb_pos: Integer
+  :param features: Dict
   """
   with open(subOutFile, 'a') as dst:
     with open(infile, 'r') as src:
-      reader = csv.DictReader(src)
+      reader = csv.DictReader(src, delimiter=';')
       for i, row in tqdm(enumerate(reader), desc="Partial processing", unit="lines", total=((stop-start)+1), position=pb_pos):
         if i >= start and i <= stop:
-          _p = Point((float(row['lon']), float(row['lat'])))
-          _f = Feature(geometry=_p, properties={'radio':row['radio'],
-                                                'mcc':row['mcc'],
-                                                'net':row['net'],
-                                                'area':row['area'],
-                                                'cell':row['cell'],
-                                                'unit':row['unit'],
-                                                'range':row['range'],
-                                                'samples':row['samples'],
-                                                'changeable':row['changeable'],
-                                                'created':row['created'],
-                                                'updated':row['updated'],
-                                                'averageSignal':row['averageSignal']}
-                      )
-          dst.write(dumps(_f, sort_keys=True)+',\n')
+          if row['Exploitant'] == features['Exploitant'] and row['Systeme'] == features['Systeme']:
+            stringdict = ''
+            for ky in row.keys():
+              stringdict = stringdict + row[ky] + ';'
+            stringdict = stringdict[0:-1]
+            dst.write(stringdict+'\n')
     src.close()
   dst.close()
 
-def merge_results(listfiles, outfile,  pb_pos=0):
+def merge_results(listfiles, outfile,  pb_pos):
   """
   Merge a set of files into one 
 
@@ -93,35 +89,22 @@ def merge_results(listfiles, outfile,  pb_pos=0):
   """
   with open(outfile, 'a') as dst:
     for k, v in tqdm(enumerate(listfiles), desc="Merging results", unit="files", position=pb_pos):
-      #remove the last ',' in the last file, otherwise the JSON will not be correct
-      if k != listfiles.index(listfiles[-1]) :
-        with open(v, 'r') as src:
-          shutil.copyfileobj(src, dst)
-        src.close()
-      else:
-        # read the last file
-        src = open(listfiles[-1], 'rw+')
-        # go to the last line where the ','and the '\n' are
-        src.seek(-len(','+os.linesep), os.SEEK_END)
-        #remove the ',\n' characters
-        src.write(' ')
-        #close the file to take into account the modification
-        src.close()
-        #copy like previously
-        with open(listfiles[-1], 'r') as src:
-          shutil.copyfileobj(src, dst)
-        src.close()
-  dst.close()
+      with open(v, 'r') as src:
+        shutil.copyfileobj(src, dst)
+      src.close()
+    dst.close()
 
 
-def whole_convert(infile, outfile):
+def whole_convert(infile, outfile, **features):
   """
-  Converts the CSV entry into geojson using the files given
+  Converts the CSV entry into csv using only the features
 
   :param infile: input file (the CSV)
   :param outfile: output file (the geojson)
+  :param features: the columns to reduce the csv to
   :type infile: String
   :type outfile: String
+  :param features: Dict
   """
   # In order to process the file among different processes, we will divide it
   # Total number of lines
@@ -139,7 +122,7 @@ def whole_convert(infile, outfile):
     for i in range(processes):
       stop = start + step
       list_out_files.append(outfile+'.'+str(i))
-      p = Process(target=unitary_conversion, args=[infile, start, stop, outfile+'.'+str(i)], kwargs={"pb_pos": i})
+      p = Process(target=unitary_extraction, args=[infile, start, stop, outfile+'.'+str(i), i], kwargs=features)
       start = stop + 1
       list_processes.append(p)
       p.start()
@@ -149,15 +132,13 @@ def whole_convert(infile, outfile):
     # merge the results
     # 0- clear the terminal
     os.system('cls' if os.name == 'nt' else 'clear')
-    # 1- the FeatureCollection part of the geojson
+    # 1- the csv header
     with open(outfile, 'a') as dst:
-      dst.write('{ "type": "FeatureCollection",\n"features": [\n')
+      dst.write('Exploitant;Systeme;Type d\'antenne;Dimension de l\'antenne;Numero d\'antenne;Debut;Azimut;Numero de support;Unite;Directivite;Numero Cartoradio;Fin;Hauteur / sol\n')
     dst.close()
     # 2- the subparts of the converted source file
-    merge_results(list_out_files, outfile) 
+    merge_results(list_out_files, outfile, 0) 
     #3- closing the geojson FeatureCollection property
-    with open(outfile, 'a') as dst:
-      dst.write('\n]\n}\n')
     dst.close()
     #4- deleting the sub files
     for f in list_out_files:
@@ -167,10 +148,11 @@ def whole_convert(infile, outfile):
 
 
 if __name__ == '__main__':
-    arguments = docopt(__doc__, version='csv2geojson utility v0.1, Author: Sofiane Imadali <sofianinho@gmail.com>')
+    arguments = docopt(__doc__, version='csvparser utility v0.1, Author: Sofiane Imadali <sofianinho@gmail.com>')
     if arguments["--input"] is not None:
      print "Converting "+arguments["--input"]+" to geojson in the file: "+arguments["--output"]
-     whole_convert(arguments["--input"], arguments["--output"])
+     features = {"Systeme": arguments["--technology"], "Exploitant": arguments["--network"]}
+     whole_convert(arguments["--input"], arguments["--output"], **features)
      print "All done! Your output is in: "+arguments["--output"]
     else:
      print "\nYou must give an input file to convert. Try -h or --help option for help.\n"
