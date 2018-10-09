@@ -5,8 +5,8 @@ The idea is that you have a global dataset having all the operators and technolo
 
 Example of commands:
 ```sh
-python2 csv2geojson.py -i examples/test.csv -o /tmp/out.csv -n "SFR" -t "LTE 800"
-python2 csv2geojson.py -i examples/test.csv -o /tmp/out.csv -n "ORANGE" -t "UMTS 900"
+python2 csvparser.py -i examples/test.csv -o /tmp/out.csv -n "SFR" -t "LTE 800"
+python2 csvparser.py -i examples/test.csv -o /tmp/out.csv -n "ORANGE" -t "UMTS 900"
 ```
 
 ## Tricks before you begin (very important)
@@ -20,8 +20,8 @@ pip install -r requirements.txt
 You can now execute the commands above.
 
 ```sh
-python2 csv2geojson.py -i examples/test.csv -o /tmp/out.csv -n "SFR" -t "LTE 800"
-python2 csv2geojson.py -i examples/test.csv -o /tmp/out.csv -n "ORANGE" -t "UMTS 900"
+python2 csvparser.py -i examples/test.csv -o /tmp/out.csv -n "SFR" -t "LTE 800"
+python2 csvparser.py -i examples/test.csv -o /tmp/out.csv -n "ORANGE" -t "UMTS 900"
 ```
 And then have a look at the generated /tmp/out.csv. If no output file argument is given, a local "out.csv" is created.
 
